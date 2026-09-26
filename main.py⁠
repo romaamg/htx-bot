@@ -1,0 +1,67 @@
+import time
+import os
+import threading
+import requests
+import telebot
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running 24/7!")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_web_server, daemon=True).start()
+
+TOKEN = '8865583893:AAHPCDTPecaRxmfUY-niq7UCMdn0t5SoJk8'
+CHAT_ID = '8889922027'
+
+bot = telebot.TeleBot(TOKEN)
+URL = "https://otc-api.bitex-press.com/v1/data/trade-offer/guba/list?coinId=2&currency=11&tradeType=sell&currPage=1&payMethod=0&acceptOrder=0&country=0&blockType=general&online=1&range=0&amount="
+
+sent_offers = set()
+
+def check_htx():
+    try:
+        response = requests.get(URL, timeout=10)
+        data = response.json()
+
+        if data.get("code") == 200 and "data" in data:
+            offers = data["data"]
+            print(f"[{time.strftime('%H:%M:%S')}] Проверено. Найдено {len(offers)} ордеров.")
+
+            for offer in offers:
+                offer_id = offer.get("id")
+                price = float(offer.get("price", 0))
+                min_limit = float(offer.get("minTradeLimit", 0))
+                max_limit = float(offer.get("maxTradeLimit", 0))
+                merchant_name = offer.get("userName", "Неизвестно")
+
+                pay_methods = [p.get("name") for p in offer.get("payMethods", [])]
+                pay_str = ", ".join(pay_methods) if pay_methods else "Не указано"
+
+                if price <= 85.0 and min_limit <= 500 <= max_limit:
+                    if offer_id not in sent_offers:
+                        sent_offers.add(offer_id)
+
+                        msg = (
+                            "🔥 **НАЙДЕНО ОБЪЯВЛЕНИЕ HTX P2P**\n\n"
+                            f"💵 **Цена:** {price} ₽\n"
+                            f"📊 **Лимит:** {min_limit} – {max_limit} ₽\n"
+                            f"💳 **Оплата:** {pay_str}\n"
+                            f"👤 **Продавец:** {merchant_name}\n\n"
+                            "🔗 [Открыть HTX P2P](https://www.htx.com/ru-ru/fiat-crypto/trader/)"
+                        )
+                        bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+
+print("Мониторинг запущен на Render...")
+while True:
+    check_htx()
+    time.sleep(10)
